@@ -127,7 +127,7 @@ def get_argparser():
                         choices=['resnet50', 'resnet101'], help='backbone for the body (def: resnet50)')
     parser.add_argument("--output_stride", type=int, default=16,
                         choices=[8, 16], help='stride for the backbone (def: 16)')
-    parser.add_argument("--no_pretrained", action='store_true', default=False,
+    parser.add_argument("--no_pretrained", action='store_true', default=True,
                         help='Wheather to use pretrained or not (def: True)')
     parser.add_argument("--norm_act", type=str, default="iabn_sync",
                         choices=['iabn_sync', 'iabn', 'abn', 'std'], help='Which BN to use (def: abn_sync')
