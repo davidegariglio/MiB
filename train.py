@@ -1,7 +1,8 @@
 import torch
 from torch import distributed
 import torch.nn as nn
-from apex import amp
+#from apex import amp
+from torch.cuda import amp
 from functools import reduce
 
 from utils.loss import KnowledgeDistillationLoss, BCEWithLogitsLossWithIgnoreIndex, \
@@ -85,6 +86,8 @@ class Trainer:
 
         train_loader.sampler.set_epoch(cur_epoch)
 
+        scaler = amp.GradScaler()
+
         model.train()
         for cur_step, (images, labels) in enumerate(train_loader):
 
@@ -96,47 +99,47 @@ class Trainer:
                     outputs_old, features_old = self.model_old(images, ret_intermediate=self.ret_intermediate)
 
             optim.zero_grad()
-            outputs, features = model(images, ret_intermediate=self.ret_intermediate)
-
+            #outputs, features = model(images, ret_intermediate=self.ret_intermediate)
+            with amp.autocast():
+                outputs, features = model(images, ret_intermediate=self.ret_intermediate)
             # xxx BCE / Cross Entropy Loss
-            if not self.icarl_only_dist:
-                loss = criterion(outputs, labels)  # B x H x W
-            else:
-                loss = self.licarl(outputs, labels, torch.sigmoid(outputs_old))
+            #all these should go inside autocast
+                if not self.icarl_only_dist:
+                    loss = criterion(outputs, labels)  # B x H x W
+                else:
+                    loss = self.licarl(outputs, labels, torch.sigmoid(outputs_old))
 
-            loss = loss.mean()  # scalar
+                loss = loss.mean()  # scalar
 
-            if self.icarl_combined:
-                # tensor.narrow( dim, start, end) -> slice tensor from start to end in the specified dim
-                n_cl_old = outputs_old.shape[1]
-                # use n_cl_old to sum the contribution of each class, and not to average them (as done in our BCE).
-                l_icarl = self.icarl * n_cl_old * self.licarl(outputs.narrow(1, 0, n_cl_old),
-                                                              torch.sigmoid(outputs_old))
+                if self.icarl_combined:
+                    # tensor.narrow( dim, start, end) -> slice tensor from start to end in the specified dim
+                    n_cl_old = outputs_old.shape[1]
+                    # use n_cl_old to sum the contribution of each class, and not to average them (as done in our BCE).
+                    l_icarl = self.icarl * n_cl_old * self.licarl(outputs.narrow(1, 0, n_cl_old),
+                                                                  torch.sigmoid(outputs_old))
 
             # xxx ILTSS (distillation on features or logits)
-            if self.lde_flag:
-                lde = self.lde * self.lde_loss(features['body'], features_old['body'])
+                if self.lde_flag:
+                    lde = self.lde * self.lde_loss(features['body'], features_old['body'])
 
-            if self.lkd_flag:
-                # resize new output to remove new logits and keep only the old ones
-                lkd = self.lkd * self.lkd_loss(outputs, outputs_old)
+                if self.lkd_flag:
+                    # resize new output to remove new logits and keep only the old ones
+                    lkd = self.lkd * self.lkd_loss(outputs, outputs_old)
 
-            # xxx first backprop of previous loss (compute the gradients for regularization methods)
-            loss_tot = loss + lkd + lde + l_icarl
+                    loss_tot = loss + lkd + lde + l_icarl
+            scaler.scale(loss_tot).backward()
 
-            with amp.scale_loss(loss_tot, optim) as scaled_loss:
-                scaled_loss.backward()
 
             # xxx Regularizer (EWC, RW, PI)
             if self.regularizer_flag:
-                if distributed.get_rank() == 0:
-                    self.regularizer.update()
+                self.regularizer.update()
                 l_reg = self.reg_importance * self.regularizer.penalty()
                 if l_reg != 0.:
-                    with amp.scale_loss(l_reg, optim) as scaled_loss:
-                        scaled_loss.backward()
+                    scaled_loss.backward()
+            scaler.step(optim)
+            scaler.update()
 
-            optim.step()
+            #optim.step()
             if scheduler is not None:
                 scheduler.step()
 
@@ -251,9 +254,9 @@ class Trainer:
             torch.distributed.reduce(class_loss, dst=0)
             torch.distributed.reduce(reg_loss, dst=0)
 
-            if distributed.get_rank() == 0:
-                class_loss = class_loss / distributed.get_world_size() / len(loader)
-                reg_loss = reg_loss / distributed.get_world_size() / len(loader)
+            #if distributed.get_rank() == 0:
+             #   class_loss = class_loss / distributed.get_world_size() / len(loader)
+              #  reg_loss = reg_loss / distributed.get_world_size() / len(loader)
 
             if logger is not None:
                 logger.info(f"Validation, Class Loss={class_loss}, Reg Loss={reg_loss} (without scaling)")
