@@ -10,6 +10,8 @@ from functools import partial, reduce
 
 import models
 from modules import DeeplabV3
+from modules import BiSeNet
+
 
 
 def make_model(opts, classes=None):
@@ -34,8 +36,10 @@ def make_model(opts, classes=None):
 
     head_channels = 256
 
-    head = DeeplabV3(body.out_channels, head_channels, 256, norm_act=norm,
-                     out_stride=opts.output_stride, pooling_size=opts.pooling)
+    head = BiSeNet(opts.num_classes, body)
+
+    #head = DeeplabV3(body.out_channels, head_channels, 256, norm_act=norm,
+    #                out_stride=opts.output_stride, pooling_size=opts.pooling)
 
     if classes is not None:
         model = IncrementalSegmentationModule(body, head, head_channels, classes=classes, fusion_mode=opts.fusion_mode)
