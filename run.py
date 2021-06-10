@@ -160,9 +160,9 @@ def main(opts):
 
     # xxx Set up optimizer
     params = []
-    if not opts.freeze:
-        params.append({"params": filter(lambda p: p.requires_grad, model.body.parameters()),
-                       'weight_decay': opts.weight_decay})
+    #if not opts.freeze:
+    #    params.append({"params": filter(lambda p: p.requires_grad, model.body.parameters()),
+    #                   'weight_decay': opts.weight_decay})
 
     params.append({"params": filter(lambda p: p.requires_grad, model.head.parameters()),
                    'weight_decay': opts.weight_decay})
