@@ -7,7 +7,8 @@ import torch.nn.functional as functional
 import torch.nn as nn
 
 def make_model(opts, classes=None):
-    norm = nn.BatchNorm2d 
+    body = models.__dict__[f'net_{opts.backbone}'](norm_act=norm, output_stride=opts.output_stride)
+    #norm = nn.BatchNorm2d 
     body = opts.backbone
     if not opts.no_pretrained:
         pretrained_path = f'pretrained/{opts.backbone}_{opts.norm_act}.pth.tar'
