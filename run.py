@@ -19,7 +19,9 @@ from dataset import VOCSegmentationIncremental, AdeSegmentationIncremental
 from dataset import transform
 from metrics import StreamSegMetrics
 
-from segmentation_module import make_model
+#from segmentation_module import make_model
+#we created BiseNet model=> we import make model
+from segmentation_module_BiSeNet import make_model
 
 from train import Trainer
 import tasks
@@ -110,15 +112,12 @@ def main(opts):
     #device_id, device = opts.local_rank, torch.device(opts.local_rank)
     #rank, world_size = distributed.get_rank(), distributed.get_world_size()
     #torch.cuda.set_device(device_id)
+    
+    rank = 0
+    world_size = None
 
-    # Initialize logging
     task_name = f"{opts.task}-{opts.dataset}"
     logdir_full = f"{opts.logdir}/{task_name}/{opts.name}/"
-    if rank == 0:
-        logger = Logger(logdir_full, rank=rank, debug=opts.debug, summary=opts.visualize, step=opts.step)
-    else:
-        logger = Logger(logdir_full, rank=rank, debug=opts.debug, summary=False)
-
     logger.print(f"Device: {device}")
 
     # Set up random seed
@@ -182,17 +181,19 @@ def main(opts):
     else:
         raise NotImplementedError
     logger.debug("Optimizer:\n%s" % optimizer)
-    """
+    
     if model_old is not None:
         [model, model_old], optimizer = amp.initialize([model.to(device), model_old.to(device)], optimizer,
                                                        opt_level=opts.opt_level)
-        model_old = DistributedDataParallel(model_old)
+        #we imported cuda
+        model_old = model_old.cuda(device)
     else:
         model, optimizer = amp.initialize(model.to(device), optimizer, opt_level=opts.opt_level)
 
     # Put the model on GPU
-    model = DistributedDataParallel(model, delay_allreduce=True)
-    """
+    model = model.cuda(device)
+    
+    
     # xxx Load old model from old weights if step > 0!
     if opts.step > 0:
         # get model path
