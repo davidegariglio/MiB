@@ -3,8 +3,8 @@ import torch.nn as nn
 from torch import distributed
 import torch.nn.functional as functional
 
-import inplace_abn
-from inplace_abn import InPlaceABNSync, InPlaceABN, ABN
+#import inplace_abn
+#from inplace_abn import InPlaceABNSync, InPlaceABN, ABN
 
 from functools import partial, reduce
 
@@ -15,14 +15,14 @@ from modules import BiSeNet
 
 
 def make_model(opts, classes=None):
-    if opts.norm_act == 'iabn_sync':
-        norm = partial(InPlaceABNSync, activation="leaky_relu", activation_param=.01)
-    elif opts.norm_act == 'iabn':
-        norm = partial(InPlaceABN, activation="leaky_relu", activation_param=.01)
-    elif opts.norm_act == 'abn':
-        norm = partial(ABN, activation="leaky_relu", activation_param=.01)
-    else:
-        norm = nn.BatchNorm2d  # not synchronized, can be enabled with apex
+    #if opts.norm_act == 'iabn_sync':
+    #    norm = partial(InPlaceABNSync, activation="leaky_relu", activation_param=.01)
+    #elif opts.norm_act == 'iabn':
+    #    norm = partial(InPlaceABN, activation="leaky_relu", activation_param=.01)
+    #elif opts.norm_act == 'abn':
+        #norm = partial(ABN, activation="leaky_relu", activation_param=.01)
+    #else:
+    norm = nn.BatchNorm2d  # not synchronized, can be enabled with apex
 
     body = models.__dict__[f'net_{opts.backbone}'](norm_act=norm, output_stride=opts.output_stride)
     if not opts.no_pretrained:
