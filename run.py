@@ -180,13 +180,13 @@ def main(opts):
         raise NotImplementedError
     logger.debug("Optimizer:\n%s" % optimizer)
     
-    if model_old is not None:
-        [model, model_old], optimizer = amp.initialize([model.to(device), model_old.to(device)], optimizer,
+    #if model_old is not None:
+     #   [model, model_old], optimizer = amp.initialize([model.to(device), model_old.to(device)], optimizer,
                                                        opt_level=opts.opt_level)
-        #we imported cuda
-        model_old = model_old.cuda(device)
-    else:
-        model, optimizer = amp.initialize(model.to(device), optimizer, opt_level=opts.opt_level)
+      #  #we imported cuda
+       # model_old = model_old.cuda(device)
+    #else:
+     #   model, optimizer = amp.initialize(model.to(device), optimizer, opt_level=opts.opt_level)
 
     # Put the model on GPU
     model = model.cuda(device)
