@@ -93,7 +93,7 @@ def get_dataset(opts):
         train_len = int(0.8 * len(train_dst))
         val_len = len(train_dst)-train_len
         train_dst, val_dst = torch.utils.data.random_split(train_dst, [train_len, val_len])
-    else:  # don't use cross_val
+    else:  
         val_dst = dataset(root=opts.data_root, train=False, transform=val_transform,
                           labels=list(labels), labels_old=list(labels_old),
                           idxs_path=path_base + f"/val-{opts.step}.npy",
@@ -108,36 +108,41 @@ def get_dataset(opts):
 
 
 def main(opts):
-    #distributed.init_process_group(backend='nccl', init_method='env://')
-    #device_id, device = opts.local_rank, torch.device(opts.local_rank)
-    #rank, world_size = distributed.get_rank(), distributed.get_world_size()
-    #torch.cuda.set_device(device_id)
-    
+    """distributed.init_process_group(backend='nccl', init_method='env://')
+    device_id, device = opts.local_rank, torch.device(opts.local_rank)
+    rank, world_size = distributed.get_rank(), distributed.get_world_size()"""
+    # device = torch.device("gpu") if torch.cuda.is_available() else torch.device("cpu")
     rank = 0
     world_size = None
 
+    # Initialize logging
     task_name = f"{opts.task}-{opts.dataset}"
     logdir_full = f"{opts.logdir}/{task_name}/{opts.name}/"
+
+    logger = Logger(logdir_full, rank=0, debug=opts.debug, summary=opts.visualize, step=opts.step)
+
+    device = torch.device('cuda') if cuda.is_available() else torch.device('cpu')
+
     logger.print(f"Device: {device}")
 
-    # Set up random seed
     torch.manual_seed(opts.random_seed)
     torch.cuda.manual_seed(opts.random_seed)
     np.random.seed(opts.random_seed)
     random.seed(opts.random_seed)
 
-    # xxx Set up dataloader
     train_dst, val_dst, test_dst, n_classes = get_dataset(opts)
     # reset the seed, this revert changes in random seed
     random.seed(opts.random_seed)
 
+    #####################################################################################
     train_loader = data.DataLoader(train_dst, batch_size=opts.batch_size,
-                                   num_workers=opts.num_workers, drop_last=True)
+                                   num_workers=opts.num_workers,)
     val_loader = data.DataLoader(val_dst, batch_size=opts.batch_size if opts.crop_val else 1,
-                                 num_workers=opts.num_workers)
+                                   num_workers=opts.num_workers)
+
     logger.info(f"Dataset: {opts.dataset}, Train set: {len(train_dst)}, Val set: {len(val_dst)},"
                 f" Test set: {len(test_dst)}, n_classes {n_classes}")
-    logger.info(f"Total batch size is {opts.batch_size}")
+    # logger.info(f"Total batch size is {opts.batch_size * world_size}")
 
     # xxx Set up model
     logger.info(f"Backbone: {opts.backbone}")
@@ -148,22 +153,16 @@ def main(opts):
 
     if opts.step == 0:  # if step 0, we don't need to instance the model_old
         model_old = None
-    else:  # instance model_old
+    else: 
         model_old = make_model(opts, classes=tasks.get_per_task_classes(opts.dataset, opts.task, opts.step - 1))
-
-    model = make_model(opts, classes=tasks.get_per_task_classes(opts.dataset, opts.task, opts.step - 1))
 
     if opts.fix_bn:
         model.fix_bn()
 
     logger.debug(model)
 
-    # xxx Set up optimizer
     params = []
-    #if not opts.freeze:
-    #    params.append({"params": filter(lambda p: p.requires_grad, model.body.parameters()),
-    #                   'weight_decay': opts.weight_decay})
-
+    
     params.append({"params": filter(lambda p: p.requires_grad, model.head.parameters()),
                    'weight_decay': opts.weight_decay})
 
@@ -179,22 +178,10 @@ def main(opts):
     else:
         raise NotImplementedError
     logger.debug("Optimizer:\n%s" % optimizer)
-    
-    #if model_old is not None:
-     #   [model, model_old], optimizer = amp.initialize([model.to(device), model_old.to(device)], optimizer,
-                                                       opt_level=opts.opt_level)
-      #  #we imported cuda
-       # model_old = model_old.cuda(device)
-    #else:
-     #   model, optimizer = amp.initialize(model.to(device), optimizer, opt_level=opts.opt_level)
 
-    # Put the model on GPU
     model = model.cuda(device)
-    
-    
-    # xxx Load old model from old weights if step > 0!
+
     if opts.step > 0:
-        # get model path
         if opts.step_ckpt is not None:
             path = opts.step_ckpt
         else:
@@ -205,7 +192,6 @@ def main(opts):
             step_checkpoint = torch.load(path, map_location="cpu")
             model.load_state_dict(step_checkpoint['model_state'], strict=False)  # False because of incr. classifiers
             if opts.init_balanced:
-                # implement the balanced initialization (new cls has weight of background and bias = bias_bkg - log(N+1)
                 model.module.init_new_classifier(device)
             # Load state dict from the model state dict, that contains the old model parameters
             model_old.load_state_dict(step_checkpoint['model_state'], strict=True)  # Load also here old parameters
@@ -221,9 +207,7 @@ def main(opts):
             par.requires_grad = False
         model_old.eval()
 
-    # xxx Set up Trainer
     trainer_state = None
-    # if not first step, then instance trainer from step_checkpoint
     if opts.step > 0 and step_checkpoint is not None:
         if 'trainer_state' in step_checkpoint:
             trainer_state = step_checkpoint['trainer_state']
@@ -232,7 +216,6 @@ def main(opts):
     trainer = Trainer(model, model_old, device=device, opts=opts, trainer_state=trainer_state,
                       classes=tasks.get_per_task_classes(opts.dataset, opts.task, opts.step))
 
-    # xxx Handle checkpoint for current model (model old will always be as previous step or None)
     best_score = 0.0
     cur_epoch = 0
     if opts.ckpt is not None and os.path.isfile(opts.ckpt):
@@ -252,16 +235,11 @@ def main(opts):
             logger.info("[!] Train from scratch")
 
     # xxx Train procedure
-    # print opts before starting training to log all parameters
     logger.add_table("Opts", vars(opts))
-    """
-    if rank == 0 and opts.sample_num > 0:
-        sample_ids = np.random.choice(len(val_loader), opts.sample_num, replace=False)  # sample idxs for visualization
-        logger.info(f"The samples id are {sample_ids}")
-    else:
-        sample_ids = None
-    """
-    
+
+    sample_ids = np.random.choice(len(val_loader), opts.sample_num, replace=False)  # sample idxs for visualization
+    logger.info(f"The samples id are {sample_ids}")
+
     label2color = utils.Label2Color(cmap=utils.color_map(opts.dataset))  # convert labels to images
     denorm = utils.Denormalize(mean=[0.485, 0.456, 0.406],
                                std=[0.229, 0.224, 0.225])  # de-normalization for original images
@@ -274,7 +252,6 @@ def main(opts):
     logger.print(torch.randint(0,100, (1,1)))
     # train/val here
     while cur_epoch < opts.epochs and TRAIN:
-        # =====  Train  =====
         model.train()
 
         epoch_loss = trainer.train(cur_epoch=cur_epoch, optim=optimizer,
@@ -288,7 +265,6 @@ def main(opts):
         logger.add_scalar("E-Loss-reg", epoch_loss[1], cur_epoch)
         logger.add_scalar("E-Loss-cls", epoch_loss[0], cur_epoch)
 
-        # =====  Validation  =====
         if (cur_epoch + 1) % opts.val_interval == 0:
             logger.info("validate on val set...")
             model.eval()
@@ -302,7 +278,7 @@ def main(opts):
             logger.info(val_metrics.to_str(val_score))
 
             # =====  Save Best Model  =====
-            #if rank == 0:  # save best model at the last iteration
+            # save best model at the last iteration
             score = val_score['Mean IoU']
             # best model to build incremental steps
             save_ckpt(f"checkpoints/step/{task_name}_{opts.name}_{opts.step}.pth",
@@ -347,14 +323,14 @@ def main(opts):
     logger.info("*** Test the model on all seen classes...")
     # make data loader
     test_loader = data.DataLoader(test_dst, batch_size=opts.batch_size if opts.crop_val else 1,
-                                  sampler=DistributedSampler(test_dst, num_replicas=None, rank=0),
+                                  sampler=DistributedSampler(test_dst, num_replicas=world_size, rank=rank),
                                   num_workers=opts.num_workers)
 
     # load best model
     if TRAIN:
         model = make_model(opts, classes=tasks.get_per_task_classes(opts.dataset, opts.task, opts.step))
         # Put the model on GPU
-        model =model.cuda(device)
+        model = model.cuda(device)
         ckpt = f"checkpoints/step/{task_name}_{opts.name}_{opts.step}.pth"
         checkpoint = torch.load(ckpt, map_location="cpu")
         model.load_state_dict(checkpoint["model_state"])
