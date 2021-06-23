@@ -3,21 +3,14 @@ import torch.nn as nn
 from torch import distributed
 import torch.nn.functional as functional
 
-#import inplace_abn
-#from inplace_abn import InPlaceABNSync, InPlaceABN, ABN
-
 from functools import partial, reduce
 
 import models
-from modules import DeeplabV3
-from modules import BiSeNet
-
 
 
 def make_model(opts, classes=None):
     norm = nn.BatchNorm2d  # not synchronized, can be enabled with apex
-
-    body = opts.backbone
+    body = models.__dict__[f'net_{opts.backbone}'](norm_act=norm, output_stride=opts.output_stride)
 
     if not opts.no_pretrained:
         pretrained_path = f'pretrained/{opts.backbone}_{opts.norm_act}.pth.tar'
@@ -28,13 +21,15 @@ def make_model(opts, classes=None):
         body.load_state_dict(pre_dict['state_dict'])
         del pre_dict  # free memory
 
-    head = BiSeNet(len(classes), body)
+    head_channels = 256
 
     if classes is not None:
-        model = IncrementalSegmentationBiSeNet(body, head, classes=classes, fusion_mode=opts.fusion_mode)
+        # model = IncrementalSegmentationModule(BiSeNet, ...)
+        model = IncrementalSegmentationModule(body, head, head_channels, classes=classes, fusion_mode=opts.fusion_mode)
     else:
-        # model = SegmentationModule(body, head, head_channels, opts.num_classes, opts.fusion_mode)
-        pass
+        # model = BiSeNet(...)
+        # -- fold
+        model = SegmentationModule(body, head, head_channels, opts.num_classes, opts.fusion_mode)
 
     return model
 
@@ -46,39 +41,30 @@ def flip(x, dim):
     return x[tuple(indices)]
 
 
-class IncrementalSegmentationBiSeNet(nn.Module):
+class IncrementalSegmentationModule(nn.Module):
 
-    def __init__(self, body, head, classes, ncm=False, fusion_mode="mean"):
-        super(IncrementalSegmentationBiSeNet, self).__init__()
-
-        self.body = body ###
-        self.head = head ###
-
+    def __init__(self, body, head, head_channels, classes, ncm=False, fusion_mode="mean"):
+        super(IncrementalSegmentationModule, self).__init__()
+        self.body = body
+        self.head = head
+        # classes must be a list where [n_class_task[i] for i in tasks]
         assert isinstance(classes, list), \
             "Classes must be a list where to every index correspond the num of classes for that task"
-
-        # c = number of classes for the current step
         self.cls = nn.ModuleList(
-            [nn.Conv2d(in_channels=c, out_channels=c, kernel_size=1) for c in classes]
-            # [nn.Conv2d(256, c, 1) for c in classes]
+            [nn.Conv2d(head_channels, c, 1) for c in classes]
         )
-
         self.classes = classes
-        self.head_channels = 256
+        self.head_channels = head_channels
         self.tot_classes = reduce(lambda a, b: a + b, self.classes)
         self.means = None
 
     def _network(self, x, ret_intermediate=False):
 
-        # x_b = self.body(x)
-        x_pl, xc1, xc2 = self.head(x)
-
-
+        x_b = self.body(x)
+        x_pl = self.head(x_b)
         out = []
-
         for mod in self.cls:
             out.append(mod(x_pl))
-
         x_o = torch.cat(out, dim=1)
 
         if ret_intermediate:
@@ -87,12 +73,10 @@ class IncrementalSegmentationBiSeNet(nn.Module):
 
     def init_new_classifier(self, device):
         cls = self.cls[-1]
-
         imprinting_w = self.cls[0].weight[0]
         bkg_bias = self.cls[0].bias[0]
 
         bias_diff = torch.log(torch.FloatTensor([self.classes[-1] + 1])).to(device)
-
         new_bias = (bkg_bias - bias_diff)
 
         cls.weight.data.copy_(imprinting_w)
@@ -102,9 +86,7 @@ class IncrementalSegmentationBiSeNet(nn.Module):
 
     def forward(self, x, scales=None, do_flip=False, ret_intermediate=False):
         out_size = x.shape[-2:]
-
         out = self._network(x, ret_intermediate)
-
         sem_logits = out[0] if ret_intermediate else out
 
         sem_logits = functional.interpolate(sem_logits, size=out_size, mode="bilinear", align_corners=False)
