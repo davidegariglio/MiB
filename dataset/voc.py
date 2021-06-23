@@ -34,14 +34,7 @@ classes = {
 
 
 class VOCSegmentation(data.Dataset):
-    """`Pascal VOC <http://host.robots.ox.ac.uk/pascal/VOC/>`_ Segmentation Dataset.
-    Args:
-        root (string): Root directory of the VOC Dataset.
-        image_set (string, optional): Select the image_set to use, ``train``, ``trainval`` or ``val``
-        is_aug (bool, optional): If you want to use the augmented train set or not (default is True)
-        transform (callable, optional): A function/transform that  takes in an PIL image
-            and returns a transformed version. E.g, ``transforms.RandomCrop``
-    """
+
 
     def __init__(self,
                  root,
@@ -55,7 +48,7 @@ class VOCSegmentation(data.Dataset):
         self.transform = transform
 
         self.image_set = image_set
-        base_dir = "PascalVOC12"
+        base_dir = "VOC2012"
         voc_root = os.path.join(self.root, base_dir)
         splits_dir = os.path.join(voc_root, 'splits')
 
@@ -136,7 +129,7 @@ class VOCSegmentationIncremental(data.Dataset):
                 idxs = np.load(idxs_path).tolist()
             else:
                 idxs = filter_images(full_voc, labels, labels_old, overlap=overlap)
-                if idxs_path is not None  == 0:
+                if idxs_path is not None:
                     np.save(idxs_path, np.array(idxs, dtype=int))
 
             if train:
