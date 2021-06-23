@@ -1,15 +1,24 @@
 import torch
-from torch import distributed
-from functools import partial, reduce
-from modules import build_contextpath
-from modules.build_BiSeNet import  BiSeNet
-import torch.nn.functional as functional
 import torch.nn as nn
+from torch import distributed
+import torch.nn.functional as functional
+
+#import inplace_abn
+#from inplace_abn import InPlaceABNSync, InPlaceABN, ABN
+
+from functools import partial, reduce
+
+import models
+from modules import DeeplabV3
+from modules import BiSeNet
+
+
 
 def make_model(opts, classes=None):
-    body = models.__dict__[f'net_{opts.backbone}'](norm_act=norm, output_stride=opts.output_stride)
-    #norm = nn.BatchNorm2d 
+    norm = nn.BatchNorm2d  # not synchronized, can be enabled with apex
+
     body = opts.backbone
+
     if not opts.no_pretrained:
         pretrained_path = f'pretrained/{opts.backbone}_{opts.norm_act}.pth.tar'
         pre_dict = torch.load(pretrained_path, map_location='cpu')
@@ -24,6 +33,7 @@ def make_model(opts, classes=None):
     if classes is not None:
         model = IncrementalSegmentationBiSeNet(body, head, classes=classes, fusion_mode=opts.fusion_mode)
     else:
+        # model = SegmentationModule(body, head, head_channels, opts.num_classes, opts.fusion_mode)
         pass
 
     return model
@@ -46,8 +56,11 @@ class IncrementalSegmentationBiSeNet(nn.Module):
 
         assert isinstance(classes, list), \
             "Classes must be a list where to every index correspond the num of classes for that task"
+
+        # c = number of classes for the current step
         self.cls = nn.ModuleList(
             [nn.Conv2d(in_channels=c, out_channels=c, kernel_size=1) for c in classes]
+            # [nn.Conv2d(256, c, 1) for c in classes]
         )
 
         self.classes = classes
@@ -57,6 +70,7 @@ class IncrementalSegmentationBiSeNet(nn.Module):
 
     def _network(self, x, ret_intermediate=False):
 
+        # x_b = self.body(x)
         x_pl, xc1, xc2 = self.head(x)
 
 
