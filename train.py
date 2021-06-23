@@ -24,7 +24,6 @@ class Trainer:
         else:
             self.old_classes = 0
 
-        # Select the Loss Type
         reduction = 'none'
 
         self.bce = opts.bce or opts.icarl
@@ -60,7 +59,6 @@ class Trainer:
                 self.licarl = IcarlLoss(reduction='mean', bkg=opts.icarl_bkg)
         self.icarl_dist_flag = self.icarl_only_dist or self.icarl_combined
 
-        # Regularization
         regularizer_state = trainer_state['regularizer'] if trainer_state is not None else None
         self.regularizer = get_regularizer(model, model_old, device, opts, regularizer_state)
         self.regularizer_flag = self.regularizer is not None
@@ -84,10 +82,8 @@ class Trainer:
         l_icarl = torch.tensor(0.)
         l_reg = torch.tensor(0.)
 
-        train_loader.sampler.set_epoch(cur_epoch)
 
         scaler = amp.GradScaler()
-
         model.train()
         for cur_step, (images, labels) in enumerate(train_loader):
 
@@ -99,11 +95,10 @@ class Trainer:
                     outputs_old, features_old = self.model_old(images, ret_intermediate=self.ret_intermediate)
 
             optim.zero_grad()
-            #outputs, features = model(images, ret_intermediate=self.ret_intermediate)
             with amp.autocast():
                 outputs, features = model(images, ret_intermediate=self.ret_intermediate)
-            # xxx BCE / Cross Entropy Loss
-            #all these should go inside autocast
+
+                # xxx BCE / Cross Entropy Loss
                 if not self.icarl_only_dist:
                     loss = criterion(outputs, labels)  # B x H x W
                 else:
@@ -118,7 +113,6 @@ class Trainer:
                     l_icarl = self.icarl * n_cl_old * self.licarl(outputs.narrow(1, 0, n_cl_old),
                                                                   torch.sigmoid(outputs_old))
 
-            # xxx ILTSS (distillation on features or logits)
                 if self.lde_flag:
                     lde = self.lde * self.lde_loss(features['body'], features_old['body'])
 
@@ -126,22 +120,22 @@ class Trainer:
                     # resize new output to remove new logits and keep only the old ones
                     lkd = self.lkd * self.lkd_loss(outputs, outputs_old)
 
-                    loss_tot = loss + lkd + lde + l_icarl
+                loss_tot = loss + lkd + lde + l_icarl
+
             scaler.scale(loss_tot).backward()
 
-
-            # xxx Regularizer (EWC, RW, PI)
             if self.regularizer_flag:
                 self.regularizer.update()
                 l_reg = self.reg_importance * self.regularizer.penalty()
                 if l_reg != 0.:
-                    scaled_loss.backward()
+                    scaler.scale(l_reg).backward()
+
             scaler.step(optim)
             scaler.update()
 
-            #optim.step()
             if scheduler is not None:
                 scheduler.step()
+
 
             epoch_loss += loss.item()
             reg_loss += l_reg.item() if l_reg != 0. else 0.
@@ -164,12 +158,7 @@ class Trainer:
         epoch_loss = torch.tensor(epoch_loss).to(self.device)
         reg_loss = torch.tensor(reg_loss).to(self.device)
 
-        torch.distributed.reduce(epoch_loss, dst=0)
-        torch.distributed.reduce(reg_loss, dst=0)
 
-        if distributed.get_rank() == 0:
-            epoch_loss = epoch_loss / distributed.get_world_size() / len(train_loader)
-            reg_loss = reg_loss / distributed.get_world_size() / len(train_loader)
 
         logger.info(f"Epoch {cur_epoch}, Class Loss={epoch_loss}, Reg Loss={reg_loss}")
 
@@ -218,14 +207,12 @@ class Trainer:
                     l_icarl = self.icarl * n_cl_old * self.licarl(outputs.narrow(1, 0, n_cl_old),
                                                                   torch.sigmoid(outputs_old))
 
-                # xxx ILTSS (distillation on features or logits)
                 if self.lde_flag:
                     lde = self.lde_loss(features['body'], features_old['body'])
 
                 if self.lkd_flag:
                     lkd = self.lkd_loss(outputs, outputs_old)
 
-                # xxx Regularizer (EWC, RW, PI)
                 if self.regularizer_flag:
                     l_reg = self.regularizer.penalty()
 
@@ -245,18 +232,14 @@ class Trainer:
                                         prediction[0]))
 
             # collect statistics from multiple processes
-            metrics.synch(device)
-            score = metrics.get_results()
+            #metrics.synch(device)
+            #score = metrics.get_results()
 
             class_loss = torch.tensor(class_loss).to(self.device)
             reg_loss = torch.tensor(reg_loss).to(self.device)
 
-            torch.distributed.reduce(class_loss, dst=0)
-            torch.distributed.reduce(reg_loss, dst=0)
-
-            #if distributed.get_rank() == 0:
-             #   class_loss = class_loss / distributed.get_world_size() / len(loader)
-              #  reg_loss = reg_loss / distributed.get_world_size() / len(loader)
+            #torch.distributed.reduce(class_loss, dst=0)
+            #torch.distributed.reduce(reg_loss, dst=0)
 
             if logger is not None:
                 logger.info(f"Validation, Class Loss={class_loss}, Reg Loss={reg_loss} (without scaling)")
