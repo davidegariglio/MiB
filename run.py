@@ -299,14 +299,16 @@ def main(opts):
             # keep the metric to print them at the end of training
             results["V-IoU"] = val_score['Class IoU']
             results["V-Acc"] = val_score['Class Acc']
-
+            
             for k, (img, target, lbl) in enumerate(ret_samples):
-                img = (denorm(img) * 255).astype(np.uint8)
-                target = label2color(target).transpose(2, 0, 1).astype(np.uint8)
-                lbl = label2color(lbl).transpose(2, 0, 1).astype(np.uint8)
+                    img = (denorm(img) * 255).astype(np.uint8)
+                    target = label2color(target).transpose(
+                        2, 0, 1).astype(np.uint8)
+                    lbl = label2color(lbl).transpose(2, 0, 1).astype(np.uint8)
 
-                concat_img = np.concatenate((img, target, lbl), axis=2)  # concat along width
-                logger.add_image(f'Sample_{k}', concat_img, cur_epoch)
+                    concat_img = np.concatenate(
+                        (img, target, lbl), axis=2)  # concat along width
+                    logger.add_image(f'Sample_{k}', concat_img, cur_epoch)
 
         cur_epoch += 1
 
@@ -358,7 +360,13 @@ def main(opts):
     logger.add_scalar("T_Overall_Acc", val_score['Overall Acc'], opts.step)
     logger.add_scalar("T_MeanIoU", val_score['Mean IoU'], opts.step)
     logger.add_scalar("T_MeanAcc", val_score['Mean Acc'], opts.step)
-    
+    for k, (img, target, lbl) in enumerate(ret_samples):
+        img = (denorm(img) * 255).astype(np.uint8)
+        target = label2color(target).transpose(2, 0, 1).astype(np.uint8)
+        lbl = label2color(lbl).transpose(2, 0, 1).astype(np.uint8)
+
+        concat_img = np.concatenate((img, target, lbl), axis=2)  # concat along width
+        logger.add_image(f'Sample_{k}', concat_img, cur_epoch)
     logger.close()
 
 
