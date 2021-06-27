@@ -143,8 +143,8 @@ class Trainer:
                 l_reg = self.reg_importance * self.regularizer.penalty()
                 if l_reg != 0.:
                     # with amp.scale_loss(l_reg, optim) as scaled_loss:
-                    #     scaled_loss.backward()
-                    self.sp(opt)
+                    self.scaler.scale(l_reg).backward()
+            self.scaler.step(optim)        
             self.scaler.update()
             if scheduler is not None:
                 scheduler.step()
@@ -263,7 +263,7 @@ class Trainer:
 
             # # collect statistics from multiple processes #Why
             # metrics.synch(device)
-            # score = metrics.get_results()
+            score  = metrics.get_results()
 
             # class_loss = torch.tensor(class_loss).to(self.device)
             # reg_loss = torch.tensor(reg_loss).to(self.device)
@@ -272,8 +272,8 @@ class Trainer:
             # torch.distributed.reduce(reg_loss, dst=0)
 
             # if distributed.get_rank() == 0:
-            #     class_loss = class_loss / distributed.get_world_size() / len(loader)
-            #     reg_loss = reg_loss / distributed.get_world_size() / len(loader)
+            class_loss = class_loss / distributed.get_world_size() / len(loader)
+            reg_loss = reg_loss / distributed.get_world_size() / len(loader)
 
             if logger is not None:
                 logger.info(f"Validation, Class Loss={class_loss}, Reg Loss={reg_loss} (without scaling)")
