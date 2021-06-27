@@ -192,7 +192,7 @@ def main(opts):
             step_checkpoint = torch.load(path, map_location="cpu")
             model.load_state_dict(step_checkpoint['model_state'], strict=False)  # False because of incr. classifiers
             if opts.init_balanced:
-                model.module.init_new_classifier(device)
+                model.init_new_classifier(device)
             # Load state dict from the model state dict, that contains the old model parameters
             model_old.load_state_dict(step_checkpoint['model_state'], strict=True)  # Load also here old parameters
             logger.info(f"[!] Previous model loaded from {path}")
