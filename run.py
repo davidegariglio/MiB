@@ -325,7 +325,10 @@ def main(opts):
     test_loader = data.DataLoader(test_dst, batch_size=opts.batch_size if opts.crop_val else 1,
                                   sampler=DistributedSampler(test_dst, num_replicas=world_size, rank=rank),
                                   num_workers=opts.num_workers)
-
+    #we want print the samples
+    tot = len(test_loader)
+    sample_ids = np.array([5,tot//4,tot//2,tot//4+tot//2,tot-5])
+    
     # load best model
     if TRAIN:
         model = make_model(opts, classes=tasks.get_per_task_classes(opts.dataset, opts.task, opts.step))
@@ -340,7 +343,7 @@ def main(opts):
 
     model.eval()
 
-    val_loss, val_score, _ = trainer.validate(loader=test_loader, metrics=val_metrics, logger=logger)
+    val_loss, val_score, ret_samples = trainer.validate(loader=test_loader, metrics=val_metrics,ret_samples_ids = sample_ids, logger=logger)
     logger.print("Done test")
     logger.info(f"*** End of Test, Total Loss={val_loss[0]+val_loss[1]},"
                 f" Class Loss={val_loss[0]}, Reg Loss={val_loss[1]}")
@@ -355,7 +358,7 @@ def main(opts):
     logger.add_scalar("T_Overall_Acc", val_score['Overall Acc'], opts.step)
     logger.add_scalar("T_MeanIoU", val_score['Mean IoU'], opts.step)
     logger.add_scalar("T_MeanAcc", val_score['Mean Acc'], opts.step)
-
+    
     logger.close()
 
 
