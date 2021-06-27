@@ -135,16 +135,16 @@ class Trainer:
             #     scaled_loss.backward()
 
             # xxx Regularizer (EWC, RW, PI) # What?
-            if self.regularizer_flag:
+            if selfcaler.scale(l_reg).backward()
+
+            self.scaler.ste.regularizer_flag:
                 # if distributed.get_rank() == 0:
                 self.regularizer.update()
                 l_reg = self.reg_importance * self.regularizer.penalty()
                 if l_reg != 0.:
                     # with amp.scale_loss(l_reg, optim) as scaled_loss:
                     #     scaled_loss.backward()
-                    self.scaler.scale(l_reg).backward()
-
-            self.scaler.step(opt)
+                    self.sp(opt)
             self.scaler.update()
             if scheduler is not None:
                 scheduler.step()
@@ -179,7 +179,8 @@ class Trainer:
         #     reg_loss = reg_loss / distributed.get_world_size() / len(train_loader)
 
         logger.info(f"Epoch {cur_epoch}, Class Loss={epoch_loss}, Reg Loss={reg_loss}")
-
+        epoch_loss = epoch_loss / len(train_loader)
+        reg_loss = reg_loss / len(train_loader)
         return (epoch_loss, reg_loss)
 
     def validate(self, loader, metrics, ret_samples_ids=None, logger=None):
