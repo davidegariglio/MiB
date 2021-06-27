@@ -92,17 +92,27 @@ class Trainer:
 
             if (self.lde_flag or self.lkd_flag or self.icarl_dist_flag) and self.model_old is not None:
                 with torch.no_grad():
-                    outputs_old, features_old = self.model_old(images, ret_intermediate=self.ret_intermediate)
-
+                    #outputs_old, features_old = self.model_old(images, ret_intermediate=self.ret_intermediate)
+                    outputs_old = self.model_old(images)
+                    features_old = self.model_old.features
+            outputs = model(images)
+            features = model.features
             optim.zero_grad()
             with amp.autocast():
-                outputs, features = model(images, ret_intermediate=self.ret_intermediate)
-
+                outputs, out_sv1, out_sv2 = model(images, ret_intermediate=self.ret_intermediate)
+                features = model.features
                 # xxx BCE / Cross Entropy Loss
                 if not self.icarl_only_dist:
-                    loss = criterion(outputs, labels)  # B x H x W
+                    loss = criterion(outputs, labels)
+                    loss_1 = criterion(out_sv1, labels)
+                    loss_2 = criterion(out_sv2, labels)
                 else:
                     loss = self.licarl(outputs, labels, torch.sigmoid(outputs_old))
+                    loss_1 = self.licarl(out_sv1, labels, torch.sigmoid(outputs_old))
+                    loss_2 = self.licarl(out_sv2, labels, torch.sigmoid(outputs_old))
+                    
+                    loss+ = loss_1 + loss_2
+
 
                 loss = loss.mean()  # scalar
 
@@ -114,7 +124,7 @@ class Trainer:
                                                                   torch.sigmoid(outputs_old))
 
                 if self.lde_flag:
-                    lde = self.lde * self.lde_loss(features['body'], features_old['body'])
+                    lde = self.lde * self.lde_loss(features, features_old)
 
                 if self.lkd_flag:
                     # resize new output to remove new logits and keep only the old ones
