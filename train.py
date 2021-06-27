@@ -66,7 +66,7 @@ class Trainer:
 
         self.ret_intermediate = self.lde
 
-    def train(self, cur_epoch, optim, train_loader, scheduler=None, print_int=10, logger=None):
+    def train(self, cur_epoch, optim, train_loader, scheduler=None, print_int=90, logger=None):
         """Train and return epoch loss"""
         logger.info("Epoch %d, lr = %f" % (cur_epoch, optim.param_groups[0]['lr']))
 
@@ -100,18 +100,18 @@ class Trainer:
                 features = model.features
                 # xxx BCE / Cross Entropy Loss
                 if not self.icarl_only_dist:
-                    loss = criterion(outputs, labels)  # B x H x W
+                    new_loss = criterion(outputs, labels)  # B x H x W
                     loss_1 = criterion(out_1, labels)
                     loss_2 = criterion(out_2, labels)
                 else:
-                    loss = self.licarl(
+                    new_loss = self.licarl(
                         outputs, labels, torch.sigmoid(outputs_old))
                     loss_1 = self.licarl(
                         out_1, labels, torch.sigmoid(outputs_old))
                     loss_2 = self.licarl(
                         out_2, labels, torch.sigmoid(outputs_old))
 
-                loss = loss + loss_1 + loss_2
+                loss = new_loss + loss_1 + loss_2
                 loss = loss.mean()  # scalar
 
             if self.icarl_combined:
@@ -148,7 +148,7 @@ class Trainer:
             self.scaler.update()
             if scheduler is not None:
                 scheduler.step()
-
+            loss = new_loss.mean()
             epoch_loss += loss.item()
             reg_loss += l_reg.item() if l_reg != 0. else 0.
             reg_loss += lkd.item() + lde.item() + l_icarl.item()
@@ -177,6 +177,9 @@ class Trainer:
         # if distributed.get_rank() == 0:
         #     epoch_loss = epoch_loss / distributed.get_world_size() / len(train_loader)
         #     reg_loss = reg_loss / distributed.get_world_size() / len(train_loader)
+        
+        epoch_loss = epoch_loss / len(train_loader)
+        reg_loss = reg_loss / len(train_loader)
 
         logger.info(f"Epoch {cur_epoch}, Class Loss={epoch_loss}, Reg Loss={reg_loss}")
         epoch_loss = epoch_loss / len(train_loader)
@@ -214,19 +217,19 @@ class Trainer:
                 features = model.features
                 # xxx BCE / Cross Entropy Loss
                 if not self.icarl_only_dist:
-                    loss = criterion(outputs, labels)  # B x H x W
-                    loss_1 = criterion(out_1, labels)
-                    loss_2 = criterion(out_2, labels)
+                    new_loss = criterion(outputs, labels)  # B x H x W
+                    #loss_1 = criterion(out_1, labels)
+                    #loss_2 = criterion(out_2, labels)
                 else:
-                    loss = self.licarl(
+                    new_loss = self.licarl(
                         outputs, labels, torch.sigmoid(outputs_old))
-                    loss_1 = self.licarl(
-                        out_1, labels, torch.sigmoid(outputs_old))
-                    loss_2 = self.licarl(
-                        out_2, labels, torch.sigmoid(outputs_old))
+                    #loss_1 = self.licarl(
+                        #out_1, labels, torch.sigmoid(outputs_old))
+                    #loss_2 = self.licarl(
+                        #out_2, labels, torch.sigmoid(outputs_old))
 
-                loss = loss + loss_1 + loss_2
-                loss = loss.mean()  # scalar
+                #loss = loss + loss_1 + loss_2
+                loss = new_loss.mean()  # scalar
 
                 if self.icarl_combined:
                     # tensor.narrow( dim, start, end) -> slice tensor from start to end in the specified dim
