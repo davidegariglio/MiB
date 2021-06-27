@@ -1,7 +1,7 @@
 import torch
-from torch import distributed
+# from torch import distributed
 import torch.nn as nn
-#from apex import amp
+# from apex import amp
 from torch.cuda import amp
 from functools import reduce
 
@@ -16,6 +16,7 @@ class Trainer:
         self.model_old = model_old
         self.model = model
         self.device = device
+        self.scaler = amp.GradScaler()
 
         if classes is not None:
             new_classes = classes[-1]
@@ -34,7 +35,6 @@ class Trainer:
         else:
             self.criterion = nn.CrossEntropyLoss(ignore_index=255, reduction=reduction)
 
-        # ILTSS
         self.lde = opts.loss_de
         self.lde_flag = self.lde > 0. and model_old is not None
         self.lde_loss = nn.MSELoss()
@@ -82,70 +82,71 @@ class Trainer:
         l_icarl = torch.tensor(0.)
         l_reg = torch.tensor(0.)
 
-
         scaler = amp.GradScaler()
         model.train()
         for cur_step, (images, labels) in enumerate(train_loader):
 
             images = images.to(device, dtype=torch.float32)
             labels = labels.to(device, dtype=torch.long)
-
-            if (self.lde_flag or self.lkd_flag or self.icarl_dist_flag) and self.model_old is not None:
-                with torch.no_grad():
-                    #outputs_old, features_old = self.model_old(images, ret_intermediate=self.ret_intermediate)
-                    outputs_old = self.model_old(images)
-                    features_old = self.model_old.features
-            outputs = model(images)
-            features = model.features
-            optim.zero_grad()
             with amp.autocast():
-                outputs, out_sv1, out_sv2 = model(images, ret_intermediate=self.ret_intermediate)
+                if (self.lde_flag or self.lkd_flag or self.icarl_dist_flag) and self.model_old is not None:
+                    with torch.no_grad():
+                        outputs_old = self.model_old(images)
+                        features_old = self.model_old.features
+
+                optim.zero_grad()
+                outputs, out_1, out_2 = model(
+                    images, ret_intermediate=self.ret_intermediate)
                 features = model.features
                 # xxx BCE / Cross Entropy Loss
                 if not self.icarl_only_dist:
-                    loss = criterion(outputs, labels)
-                    loss_1 = criterion(out_sv1, labels)
-                    loss_2 = criterion(out_sv2, labels)
+                    loss = criterion(outputs, labels)  # B x H x W
+                    loss_1 = criterion(out_1, labels)
+                    loss_2 = criterion(out_2, labels)
                 else:
-                    loss = self.licarl(outputs, labels, torch.sigmoid(outputs_old))
-                    loss_1 = self.licarl(out_sv1, labels, torch.sigmoid(outputs_old))
-                    loss_2 = self.licarl(out_sv2, labels, torch.sigmoid(outputs_old))
-                    
-                    loss+ = loss_1 + loss_2
+                    loss = self.licarl(
+                        outputs, labels, torch.sigmoid(outputs_old))
+                    loss_1 = self.licarl(
+                        out_1, labels, torch.sigmoid(outputs_old))
+                    loss_2 = self.licarl(
+                        out_2, labels, torch.sigmoid(outputs_old))
 
-
+                loss = loss + loss_1 + loss_2
                 loss = loss.mean()  # scalar
 
-                if self.icarl_combined:
-                    # tensor.narrow( dim, start, end) -> slice tensor from start to end in the specified dim
-                    n_cl_old = outputs_old.shape[1]
-                    # use n_cl_old to sum the contribution of each class, and not to average them (as done in our BCE).
-                    l_icarl = self.icarl * n_cl_old * self.licarl(outputs.narrow(1, 0, n_cl_old),
-                                                                  torch.sigmoid(outputs_old))
+            if self.icarl_combined:
+                # tensor.narrow( dim, start, end) -> slice tensor from start to end in the specified dim
+                n_cl_old = outputs_old.shape[1]
+                # use n_cl_old to sum the contribution of each class, and not to average them (as done in our BCE).
+                l_icarl = self.icarl * n_cl_old * self.licarl(outputs.narrow(1, 0, n_cl_old),
+                                                              torch.sigmoid(outputs_old))
 
-                if self.lde_flag:
-                    lde = self.lde * self.lde_loss(features, features_old)
+            if self.lde_flag:
+                lde = self.lde * self.lde_loss(features, features_old)
 
-                if self.lkd_flag:
-                    # resize new output to remove new logits and keep only the old ones
-                    lkd = self.lkd * self.lkd_loss(outputs, outputs_old)
+            if self.lkd_flag:
+                # resize new output to remove new logits and keep only the old ones
+                lkd = self.lkd * self.lkd_loss(outputs, outputs_old)
 
-                loss_tot = loss + lkd + lde + l_icarl
+            # xxx first backprop of previous loss (compute the gradients for regularization methods)
+            loss_tot = loss + lkd + lde + l_icarl
+            self.scaler.scale(loss_tot).backward()
+            # with amp.scale_loss(loss_tot, optim) as scaled_loss:
+            #     scaled_loss.backward()
 
-            scaler.scale(loss_tot).backward()
-
+            # xxx Regularizer (EWC, RW, PI) # What?
             if self.regularizer_flag:
+                # if distributed.get_rank() == 0:
                 self.regularizer.update()
                 l_reg = self.reg_importance * self.regularizer.penalty()
                 if l_reg != 0.:
-                    scaler.scale(l_reg).backward()
+                    # with amp.scale_loss(l_reg, optim) as scaled_loss:
+                    #     scaled_loss.backward()
+                    self.scaler.scale(l_reg).backward()
 
-            scaler.step(optim)
-            scaler.update()
-
+            optim.step()
             if scheduler is not None:
                 scheduler.step()
-
 
             epoch_loss += loss.item()
             reg_loss += l_reg.item() if l_reg != 0. else 0.
@@ -157,18 +158,24 @@ class Trainer:
                 interval_loss = interval_loss / print_int
                 logger.info(f"Epoch {cur_epoch}, Batch {cur_step + 1}/{len(train_loader)},"
                             f" Loss={interval_loss}")
-                logger.debug(f"Loss made of: CE {loss}, LKD {lkd}, LDE {lde}, LReg {l_reg}")
+                logger.debug(
+                    f"Loss made of: CE {loss}, LKD {lkd}, LDE {lde}, LReg {l_reg}")
                 # visualization
                 if logger is not None:
                     x = cur_epoch * len(train_loader) + cur_step + 1
                     logger.add_scalar('Loss', interval_loss, x)
                 interval_loss = 0.0
 
-        # collect statistics from multiple processes
-        epoch_loss = torch.tensor(epoch_loss).to(self.device)
-        reg_loss = torch.tensor(reg_loss).to(self.device)
+        # # collect statistics from multiple processes
+        # epoch_loss = torch.tensor(epoch_loss).to(self.device)
+        # reg_loss = torch.tensor(reg_loss).to(self.device)
 
+        # torch.distributed.reduce(epoch_loss, dst=0)
+        # torch.distributed.reduce(reg_loss, dst=0)
 
+        # if distributed.get_rank() == 0:
+        #     epoch_loss = epoch_loss / distributed.get_world_size() / len(train_loader)
+        #     reg_loss = reg_loss / distributed.get_world_size() / len(train_loader)
 
         logger.info(f"Epoch {cur_epoch}, Class Loss={epoch_loss}, Reg Loss={reg_loss}")
 
@@ -198,16 +205,25 @@ class Trainer:
 
                 if (self.lde_flag or self.lkd_flag or self.icarl_dist_flag) and self.model_old is not None:
                     with torch.no_grad():
-                        outputs_old, features_old = self.model_old(images, ret_intermediate=True)
+                        outputs_old = self.model_old(images)
+                        features_old = self.model_old.features
 
-                outputs, features = model(images, ret_intermediate=True)
-
+                outputs = model(images)
+                features = model.features
                 # xxx BCE / Cross Entropy Loss
                 if not self.icarl_only_dist:
                     loss = criterion(outputs, labels)  # B x H x W
+                    loss_1 = criterion(out_1, labels)
+                    loss_2 = criterion(out_2, labels)
                 else:
-                    loss = self.licarl(outputs, labels, torch.sigmoid(outputs_old))
+                    loss = self.licarl(
+                        outputs, labels, torch.sigmoid(outputs_old))
+                    loss_1 = self.licarl(
+                        out_1, labels, torch.sigmoid(outputs_old))
+                    loss_2 = self.licarl(
+                        out_2, labels, torch.sigmoid(outputs_old))
 
+                loss = loss + loss_1 + loss_2
                 loss = loss.mean()  # scalar
 
                 if self.icarl_combined:
@@ -217,12 +233,14 @@ class Trainer:
                     l_icarl = self.icarl * n_cl_old * self.licarl(outputs.narrow(1, 0, n_cl_old),
                                                                   torch.sigmoid(outputs_old))
 
+                # xxx ILTSS (distillation on features or logits)
                 if self.lde_flag:
-                    lde = self.lde_loss(features['body'], features_old['body'])
+                    lde = self.lde_loss(features, features_old)
 
                 if self.lkd_flag:
                     lkd = self.lkd_loss(outputs, outputs_old)
 
+                # xxx Regularizer (EWC, RW, PI) # WHAT?
                 if self.regularizer_flag:
                     l_reg = self.regularizer.penalty()
 
@@ -241,15 +259,19 @@ class Trainer:
                                         labels[0],
                                         prediction[0]))
 
-            # collect statistics from multiple processes
-            #metrics.synch(device)
-            #score = metrics.get_results()
+            # # collect statistics from multiple processes #Why
+            # metrics.synch(device)
+            # score = metrics.get_results()
 
-            class_loss = torch.tensor(class_loss).to(self.device)
-            reg_loss = torch.tensor(reg_loss).to(self.device)
+            # class_loss = torch.tensor(class_loss).to(self.device)
+            # reg_loss = torch.tensor(reg_loss).to(self.device)
 
-            #torch.distributed.reduce(class_loss, dst=0)
-            #torch.distributed.reduce(reg_loss, dst=0)
+            # torch.distributed.reduce(class_loss, dst=0)
+            # torch.distributed.reduce(reg_loss, dst=0)
+
+            # if distributed.get_rank() == 0:
+            #     class_loss = class_loss / distributed.get_world_size() / len(loader)
+            #     reg_loss = reg_loss / distributed.get_world_size() / len(loader)
 
             if logger is not None:
                 logger.info(f"Validation, Class Loss={class_loss}, Reg Loss={reg_loss} (without scaling)")
