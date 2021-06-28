@@ -99,3 +99,8 @@ class IncrementalSegmentationBiSeNet(nn.Module):
                 m.eval()
                 m.weight.requires_grad = False
                 m.bias.requires_grad = False
+                
+    if __name__ == "__main__":
+        model = make_model(classes=[2, 3])
+        print(model)
+        model.init_new_classifier("cpu")
