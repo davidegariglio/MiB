@@ -42,20 +42,29 @@ class IncrementalSegmentationBiSeNet(nn.Module):
 
     def _network(self, x, ret_intermediate=False):
 
-        x_pl, xc1, xc2 = self.head(x)
-
-
+        features_ffm, features_1, features_2 = self.core(x)
+        self.features = features_ffm  # save features for dist. loss
         out = []
-
+        out_1 = []
+        out_2 = []
         for mod in self.cls:
-            out.append(mod(x_pl))
-
+            out.append(mod(features_ffm))
         x_o = torch.cat(out, dim=1)
 
-        if ret_intermediate:
-            return x_o, x_b,  x_pl
-        return x_o
+        if self.training == False:
+            return x_o
 
+        for mod in self.sv1:
+            out_1.append(mod(features_1))
+        out_1 = torch.cat(out_1, dim=1)
+
+        for mod in self.sv2:
+            out_2.append(mod(features_2))
+        out_2 = torch.cat(out_2, dim=1)
+
+        return x_o, out_1, out_2
+    
+    
     def init_new_classifier(self, device):
         cls = self.cls[-1]
 
@@ -73,16 +82,15 @@ class IncrementalSegmentationBiSeNet(nn.Module):
 
     def forward(self, x, scales=None, do_flip=False, ret_intermediate=False):
         out_size = x.shape[-2:]
-
-        out = self._network(x, ret_intermediate)
-
-        sem_logits = out[0] if ret_intermediate else out
-
+        if self.training:
+            out, out_sv1, out_sv2 = self._network(x)
+            out = functional.interpolate(out, scale_factor=8, mode="bilinear")
+            out_sv1 = functional.interpolate(out_sv1, size=out_size, mode="bilinear", align_corners=False)
+            out_sv2 = functional.interpolate(out_sv2, size=out_size, mode="bilinear", align_corners=False)
+            return out, out_sv1, out_sv2
         sem_logits = functional.interpolate(sem_logits, size=out_size, mode="bilinear", align_corners=False)
-
         if ret_intermediate:
             return sem_logits, {"body": out[1], "pre_logits": out[2]}
-
         return sem_logits, {}
 
     def fix_bn(self):
