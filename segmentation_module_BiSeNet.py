@@ -14,7 +14,7 @@ from utils.logger import Logger
 
 #this is more efficient
 def make_model(opts=None, classes=None):
-    model = IncrementalBiseNet(classes=classes)
+    model = IncrementalSegmentationBiSeNet(classes=classes)
     return model
 
 def flip(x, dim):
@@ -25,30 +25,23 @@ def flip(x, dim):
 
 
 class IncrementalSegmentationBiSeNet(nn.Module):
-
-    def __init__(self, body, head, classes, ncm=False, fusion_mode="mean"):
-        super(IncrementalSegmentationBiSeNet, self).__init__()
-
-        self.body = body ###
-        self.head = head ###
-
-        # classes must be a list where [n_class_task[i] for i in tasks]
-        assert isinstance(classes, list), \
-            "Classes must be a list where to every index correspond the num of classes for that task"
-
-        self.cls = nn.ModuleList(
-            [nn.Conv2d(in_channels=c, out_channels=c, kernel_size=1) for c in classes]
-            # [nn.Conv2d(256, c, 1) for c in classes]
-        )
+    def __init__(self, classes, ncm=False, fusion_mode="mean"):
+        super(IncrementalBiseNet, self).__init__()
+        self.core = BiSeNet('resnet50')
+        channels_out = 128
+        channels_1 = 1024
+        channels_2 = 2048
+        assert isinstance(classes, list), "Classes must be a list where to every index correspond the num of classes for that task"
+        self.cls = nn.ModuleList([nn.Conv2d(channels_out, c, 1) for c in classes])
+        self.sv1 = nn.ModuleList([nn.Conv2d(channels_1, c, 1) for c in classes])
+        self.sv2 = nn.ModuleList([nn.Conv2d(channels_2, c, 1) for c in classes])
 
         self.classes = classes
-        self.head_channels = 256
         self.tot_classes = reduce(lambda a, b: a + b, self.classes)
         self.means = None
 
     def _network(self, x, ret_intermediate=False):
 
-        
         x_pl, xc1, xc2 = self.head(x)
 
 
