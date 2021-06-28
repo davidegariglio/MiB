@@ -12,32 +12,10 @@ from functools import partial, reduce
 
 from utils.logger import Logger
 
-
-def make_model(opts, classes=None):
-    norm = nn.BatchNorm2d  # not synchronized, can be enabled with apex
-
-    # body = models.__dict__[f'net_{opts.backbone}'](norm_act=norm, output_stride=opts.output_stride)
-    body = opts.backbone
-
-    if not opts.no_pretrained:
-        pretrained_path = f'pretrained/{opts.backbone}_{opts.norm_act}.pth.tar'
-        pre_dict = torch.load(pretrained_path, map_location='cpu')
-        del pre_dict['state_dict']['classifier.fc.weight']
-        del pre_dict['state_dict']['classifier.fc.bias']
-
-        body.load_state_dict(pre_dict['state_dict'])
-        del pre_dict  # free memory
-
-    head = BiSeNet(len(classes), body)
-
-    if classes is None:
-      pass
-    else:
-      model = IncrementalSegmentationBiSeNet(body, head, classes=classes, fusion_mode=opts.fusion_mode)
-        
-
+#this is more efficient
+def make_model(opts=None, classes=None):
+    model = IncrementalBiseNet(classes=classes)
     return model
-
 
 def flip(x, dim):
     indices = [slice(None)] * x.dim()
