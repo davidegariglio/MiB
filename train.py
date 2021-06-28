@@ -19,7 +19,7 @@ class Trainer:
         self.device = device
         self.batch_size = opts.batch_size
         self.scaler = amp.GradScaler()
-        batch_size = self.batch_size
+        #batch_size = self.batch_size
         if classes is not None:
             new_classes = classes[-1]
             tot_classes = reduce(lambda a, b: a + b, classes)
@@ -72,8 +72,8 @@ class Trainer:
         """Train and return epoch loss"""
         logger.info("Epoch %d, lr = %f" % (cur_epoch, optim.param_groups[0]['lr']))
         
-        tqlt = tqdm(total=len(train_loader))
-        tqlt = tqlt * batch_size
+        tqlt = tqdm(total=len(train_loader)*self.batch_size)
+        #tqlt = tqlt * batch_size
         device = self.device
         model = self.model
         criterion = self.criterion
@@ -139,9 +139,8 @@ class Trainer:
             #     scaled_loss.backward()
 
             # xxx Regularizer (EWC, RW, PI) # What?
-            if selfcaler.scale(l_reg).backward()
 
-            self.scaler.ste.regularizer_flag:
+            if self.scaler.ste.regularizer_flag:
                 # if distributed.get_rank() == 0:
                 self.regularizer.update()
                 l_reg = self.reg_importance * self.regularizer.penalty()
@@ -193,8 +192,8 @@ class Trainer:
         return (epoch_loss, reg_loss)
 
     def validate(self, loader, metrics, ret_samples_ids=None, logger=None):
-        tqlt = tqdm(total=len(loader))
-        tqlt = tqlt * batch_size
+        tqlt = tqdm(total=len(loader)*self.batch_size)
+        #tqlt = tqlt * batch_size
         """Do validation and return specified samples"""
         metrics.reset()
         model = self.model
@@ -271,9 +270,9 @@ class Trainer:
                     ret_samples.append((images[0].detach().cpu().numpy(),
                                         labels[0],
                                         prediction[0]))
-                pbar.update(len(labels))
+                tqlt.update(len(labels))
 
-            pbar.close()
+            tqlt.close()
 
             # # collect statistics from multiple processes #Why
             # metrics.synch(device)
