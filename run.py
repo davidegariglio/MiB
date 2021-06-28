@@ -366,7 +366,7 @@ def main(opts):
         lbl = label2color(lbl).transpose(2, 0, 1).astype(np.uint8)
 
         concat_img = np.concatenate((img, target, lbl), axis=2)  # concat along width
-        logger.add_image(f'Sample_{k}', concat_img, cur_epoch)
+        logger.add_image(f'Test_{k}', concat_img, 0)
     logger.close()
 
 
