@@ -19,7 +19,6 @@ class Trainer:
         self.device = device
         self.batch_size = opts.batch_size
         self.scaler = amp.GradScaler()
-        #batch_size = self.batch_size
         if classes is not None:
             new_classes = classes[-1]
             tot_classes = reduce(lambda a, b: a + b, classes)
@@ -140,7 +139,7 @@ class Trainer:
 
             # xxx Regularizer (EWC, RW, PI) # What?
 
-            if self.scaler.ste.regularizer_flag:
+            if self.regularizer_flag:
                 # if distributed.get_rank() == 0:
                 self.regularizer.update()
                 l_reg = self.reg_importance * self.regularizer.penalty()
@@ -193,7 +192,6 @@ class Trainer:
 
     def validate(self, loader, metrics, ret_samples_ids=None, logger=None):
         tqlt = tqdm(total=len(loader)*self.batch_size)
-        #tqlt = tqlt * batch_size
         """Do validation and return specified samples"""
         metrics.reset()
         model = self.model
