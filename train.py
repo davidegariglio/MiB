@@ -1,4 +1,5 @@
 import torch
+from tqdm import tqdm
 # from torch import distributed
 import torch.nn as nn
 # from apex import amp
@@ -16,8 +17,9 @@ class Trainer:
         self.model_old = model_old
         self.model = model
         self.device = device
+        self.batch_size = opts.batch_size
         self.scaler = amp.GradScaler()
-
+        batch_size = self.batch_size
         if classes is not None:
             new_classes = classes[-1]
             tot_classes = reduce(lambda a, b: a + b, classes)
@@ -69,7 +71,9 @@ class Trainer:
     def train(self, cur_epoch, optim, train_loader, scheduler=None, print_int=90, logger=None):
         """Train and return epoch loss"""
         logger.info("Epoch %d, lr = %f" % (cur_epoch, optim.param_groups[0]['lr']))
-
+        
+        tqlt = tqdm(total=len(train_loader))
+        tqlt = tqlt * batch_size
         device = self.device
         model = self.model
         criterion = self.criterion
@@ -166,6 +170,8 @@ class Trainer:
                     x = cur_epoch * len(train_loader) + cur_step + 1
                     logger.add_scalar('Loss', interval_loss, x)
                 interval_loss = 0.0
+            tqlt.update(len(labels))
+        tqlt.close()
 
         # # collect statistics from multiple processes
         # epoch_loss = torch.tensor(epoch_loss).to(self.device)
@@ -187,6 +193,8 @@ class Trainer:
         return (epoch_loss, reg_loss)
 
     def validate(self, loader, metrics, ret_samples_ids=None, logger=None):
+        tqlt = tqdm(total=len(loader))
+        tqlt = tqlt * batch_size
         """Do validation and return specified samples"""
         metrics.reset()
         model = self.model
@@ -263,6 +271,9 @@ class Trainer:
                     ret_samples.append((images[0].detach().cpu().numpy(),
                                         labels[0],
                                         prediction[0]))
+                pbar.update(len(labels))
+
+            pbar.close()
 
             # # collect statistics from multiple processes #Why
             # metrics.synch(device)
