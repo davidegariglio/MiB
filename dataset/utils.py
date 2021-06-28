@@ -70,7 +70,7 @@ class Subset(torch.utils.data.Dataset):
         target_transform(callable): way to transform the target labels
     """
 
-    def __init__(self, dataset, indices,prev_indices transform=None, target_transform=None,exemplars_transform = None):
+    def __init__(self, dataset, indices, transform=None, target_transform=None):
         self.dataset = dataset
         #if prev_indices is not None:
          #   self.indices = indices + prev_indices 
@@ -80,8 +80,8 @@ class Subset(torch.utils.data.Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.new_classes_idxs = set(indices)
-        self.exemplars_idxs = set(prev_indices)
-        self.exemplars_transform = exemplars_transform
+        #self.exemplars_idxs = set(prev_indices)
+        #self.exemplars_transform = exemplars_transform
 
     def __getitem__(self, idx):
         sample, target = self.dataset[self.indices[idx]]
