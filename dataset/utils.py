@@ -72,10 +72,10 @@ class Subset(torch.utils.data.Dataset):
 
     def __init__(self, dataset, indices,prev_indices transform=None, target_transform=None,exemplars_transform = None):
         self.dataset = dataset
-        if ex_indices is not None:
-            self.indices = indices + ex_indices 
-        else 
-            self.indices = indices
+        #if prev_indices is not None:
+         #   self.indices = indices + prev_indices 
+        #else 
+        self.indices = indices
         self.indices = indices
         self.transform = transform
         self.target_transform = target_transform
