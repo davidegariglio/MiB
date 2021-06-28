@@ -26,7 +26,7 @@ def flip(x, dim):
 
 class IncrementalSegmentationBiSeNet(nn.Module):
     def __init__(self, classes, ncm=False, fusion_mode="mean"):
-        super(IncrementalBiseNet, self).__init__()
+        super(IncrementalSegmentationBiSeNet, self).__init__()
         self.core = BiSeNet('resnet50')
         channels_out = 128
         channels_1 = 1024
