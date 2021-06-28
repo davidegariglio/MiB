@@ -1,3 +1,4 @@
+from tqdm import tqdm
 import torch
 import numpy as np
 
@@ -7,7 +8,7 @@ def group_images(dataset, labels):
     idxs = {lab: [] for lab in labels}
 
     labels_cum = labels + [0, 255]
-    for i in range(len(dataset)):
+    for i in tqdm(range(len(dataset))):
         cls = np.unique(np.array(dataset[i][1]))
         if all(x in labels_cum for x in cls):
             for x in cls:
@@ -17,7 +18,12 @@ def group_images(dataset, labels):
 
 
 def filter_images(dataset, labels, labels_old=None, overlap=True):
-    # Filter images without any label in LABELS (using labels not reordered)
+    examplers_idxs = None
+    labels_cum = set((labels_old) + labels)
+    labels_cum.discard(0)
+    labels_cum.discard(255)
+    groups = {lab: [] for lab in labels_cum}
+
     idxs = []
 
     if 0 in labels:
@@ -37,10 +43,22 @@ def filter_images(dataset, labels, labels_old=None, overlap=True):
         cls = np.unique(np.array(dataset[i][1]))
         if fil(cls):
             idxs.append(i)
-        if i % 1000 == 0:
-            print(f"\t{i}/{len(dataset)} ...")
-    return idxs
+            
+        if col_examplers:
+            update(i, cls, labels_cum, groups)
 
+    if col_examplers:
+        examplers_idxs = select_examplers(groups, opts.examplers_size)
+
+    return idxs, examplers_idxs
+def update(i, cls, labels_cum, g):
+    for l in cls:
+        if l in labels_cum and len(g[l]) < exemplars_size:
+            g[l].append(i)
+            return
+
+def select_examplers(groups, examplers_size):
+    pass
 
 class Subset(torch.utils.data.Dataset):
     """
@@ -52,11 +70,18 @@ class Subset(torch.utils.data.Dataset):
         target_transform(callable): way to transform the target labels
     """
 
-    def __init__(self, dataset, indices, transform=None, target_transform=None):
+    def __init__(self, dataset, indices,prev_indices transform=None, target_transform=None,exemplars_transform = None):
         self.dataset = dataset
+        if ex_indices is not None:
+            self.indices = indices + ex_indices 
+        else 
+            self.indices = indices
         self.indices = indices
         self.transform = transform
         self.target_transform = target_transform
+        self.new_classes_idxs = set(indices)
+        self.exemplars_idxs = set(prev_indices)
+        self.exemplars_transform = exemplars_transform
 
     def __getitem__(self, idx):
         sample, target = self.dataset[self.indices[idx]]
@@ -66,11 +91,16 @@ class Subset(torch.utils.data.Dataset):
 
         if self.target_transform is not None:
             target = self.target_transform(target)
-
+            
         return sample, target
 
     def __len__(self):
         return len(self.indices)
+    
+    def _applyExemplarsMask(self, idx):
+      
+        return self.exemplars_transform is not None and self.indices[idx] not in self.new_classes_idxs
+
 
 
 class MaskLabels:
