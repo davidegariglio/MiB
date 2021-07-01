@@ -79,10 +79,9 @@ class Subset(torch.utils.data.Dataset):
          #   self.indices = indices + prev_indices 
         #else 
         self.indices = indices
-        self.indices = indices
         self.transform = transform
         self.target_transform = target_transform
-        self.new_classes_idxs = set(indices)
+        self.new_classes_idxs = set(self.indices)
         #self.exemplars_idxs = set(prev_indices)
         #self.exemplars_transform = exemplars_transform
 
