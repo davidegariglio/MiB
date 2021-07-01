@@ -43,13 +43,13 @@ def filter_images(dataset, labels, labels_old=None, overlap=True):
         cls = np.unique(np.array(dataset[i][1]))
         if fil(cls):
             idxs.append(i)
-            
+"""            
         if col_examplers:
             update(i, cls, labels_cum, groups)
 
     if col_examplers:
         examplers_idxs = select_examplers(groups, opts.examplers_size)
-
+"""
     return idxs, examplers_idxs
 def update(i, cls, labels_cum, g):
     for l in cls:
