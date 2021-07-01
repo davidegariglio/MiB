@@ -43,6 +43,9 @@ def filter_images(dataset, labels, labels_old=None, overlap=True):
         cls = np.unique(np.array(dataset[i][1]))
         if fil(cls):
             idxs.append(i)
+    
+    return idxs, examplers_idxs
+
 """            
         if col_examplers:
             update(i, cls, labels_cum, groups)
@@ -50,7 +53,7 @@ def filter_images(dataset, labels, labels_old=None, overlap=True):
     if col_examplers:
         examplers_idxs = select_examplers(groups, opts.examplers_size)
 """
-    return idxs, examplers_idxs
+
 def update(i, cls, labels_cum, g):
     for l in cls:
         if l in labels_cum and len(g[l]) < exemplars_size:
