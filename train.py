@@ -98,9 +98,8 @@ class Trainer:
                         features_old = self.model_old.features
 
                 optim.zero_grad()
-                outputs, out_1, out_2 = model(
-                    images, ret_intermediate=self.ret_intermediate)
-                features = model.features
+                outputs, out_1, out_2 = model(images)
+                # features = model.features
                 # xxx BCE / Cross Entropy Loss
                 if not self.icarl_only_dist:
                     new_loss = criterion(outputs, labels)  # B x H x W
@@ -218,8 +217,10 @@ class Trainer:
                         outputs_old = self.model_old(images)
                         features_old = self.model_old.features
 
-                outputs = model(images)
-                features = model.features
+                # TODO: review return in validate inside the model
+                outputs, dictionary = model(images)
+
+                # features = model.features
                 # xxx BCE / Cross Entropy Loss
                 if not self.icarl_only_dist:
                     new_loss = criterion(outputs, labels)  # B x H x W
@@ -283,8 +284,9 @@ class Trainer:
             # torch.distributed.reduce(reg_loss, dst=0)
 
             # if distributed.get_rank() == 0:
-            class_loss = class_loss / distributed.get_world_size() / len(loader)
-            reg_loss = reg_loss / distributed.get_world_size() / len(loader)
+            class_loss = torch.tensor(class_loss).cuda()
+            reg_loss = torch.tensor(reg_loss).cuda()
+
 
             if logger is not None:
                 logger.info(f"Validation, Class Loss={class_loss}, Reg Loss={reg_loss} (without scaling)")
