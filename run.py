@@ -162,10 +162,10 @@ def main(opts):
     logger.debug(model)
 
     params = []
-    
+    """
     params.append({"params": filter(lambda p: p.requires_grad, model.core.parameters()),
                    'weight_decay': opts.weight_decay})
-
+"""
     params.append({"params": filter(lambda p: p.requires_grad, model.cls.parameters()),
                    'weight_decay': opts.weight_decay})
 
