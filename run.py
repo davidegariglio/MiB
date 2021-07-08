@@ -319,14 +319,21 @@ def main(opts):
                   model, trainer, optimizer, scheduler, cur_epoch, best_score)
         logger.info("[!] Checkpoint saved.")
 
-    torch.distributed.barrier()
+    # torch.distributed.barrier()
 
     # xxx From here starts the test code
     logger.info("*** Test the model on all seen classes...")
     # make data loader
+    
+    # NOTE: This DataLoader contains DistributedSampler; we remove it for now
+    # test_loader = data.DataLoader(test_dst, batch_size=opts.batch_size if opts.crop_val else 1,
+    #                              sampler=DistributedSampler(test_dst, num_replicas=world_size, rank=rank),
+    #                              num_workers=opts.num_workers)
+    
+    # ***Correct DataLoader:***
     test_loader = data.DataLoader(test_dst, batch_size=opts.batch_size if opts.crop_val else 1,
-                                  sampler=DistributedSampler(test_dst, num_replicas=world_size, rank=rank),
                                   num_workers=opts.num_workers)
+    
     #we want print the samples
     tot = len(test_loader)
     sample_ids = np.array([5,tot//4,tot//2,tot//4+tot//2,tot-5])
