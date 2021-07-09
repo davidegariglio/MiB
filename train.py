@@ -9,6 +9,7 @@ from functools import reduce
 from utils.loss import KnowledgeDistillationLoss, BCEWithLogitsLossWithIgnoreIndex, \
     UnbiasedKnowledgeDistillationLoss, UnbiasedCrossEntropy, IcarlLoss
 from utils import get_regularizer
+from torch.cuda.amp import autocast
 
 
 class Trainer:
@@ -112,7 +113,7 @@ class Trainer:
                             outputs, labels, torch.sigmoid(outputs_old))
                      
 
-                    loss = loss.mean()  # scalar
+                    loss = new_loss.mean()  # scalar
 
                     if self.icarl_combined:
                         # tensor.narrow( dim, start, end) -> slice tensor from start to end in the specified dim
